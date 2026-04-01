@@ -1,11 +1,11 @@
 from headless_ida import HeadlessIda
 
-IDAT_PATH = "/path/to/idat64"
+IDA_PATH = "/path/to/idat"
 
 
 class IDA:
     def __init__(self, binary_path):
-        self.headless_ida = HeadlessIda(IDAT_PATH, binary_path)
+        self.headless_ida = HeadlessIda(IDA_PATH, binary_path)
         self.idautils = self.headless_ida.import_module("idautils")
         self.ida_funcs = self.headless_ida.import_module("ida_funcs")
         self.ida_hexrays = self.headless_ida.import_module("ida_hexrays")

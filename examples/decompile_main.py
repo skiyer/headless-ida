@@ -1,19 +1,13 @@
 
-# run with `headless-ida /path/to/idat64 /bin/ls decompile_main.py`
+# run with `headless-ida /path/to/idat /bin/ls decompile_main.py`
+# or     `headless-ida server:18000 /bin/ls decompile_main.py`
 
 import idautils, ida_funcs, ida_hexrays
 
-def get_function_by_name(name):
-    for ea in idautils.Functions():
-        if ida_funcs.get_func_name(ea) == name:
-            return ea
-    return None
-
-def decompile_function(ea):
-    cfunc = ida_hexrays.decompile(ea)
-    if cfunc is None:
-        return None
-    return str(cfunc)
-
-print(decompile_function(get_function_by_name("main")))
-
+for ea in idautils.Functions():
+    name = ida_funcs.get_func_name(ea)
+    if name == "main":
+        cfunc = ida_hexrays.decompile(ea)
+        if cfunc:
+            print(str(cfunc))
+        break

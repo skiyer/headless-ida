@@ -1,5 +1,6 @@
 
-# run with `headless-ida /path/to/idat64 /bin/ls list_functions.py`
+# run with `headless-ida /path/to/idat /bin/ls list_functions.py`
+# or     `headless-ida server:18000 /bin/ls list_functions.py`
 
 import idautils, ida_name
 

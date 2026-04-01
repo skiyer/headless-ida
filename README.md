@@ -3,103 +3,211 @@
 </p>
 <h1 align="center">Headless IDA</h1>
 
-[![Latest Release](https://img.shields.io/pypi/v/headless-ida.svg)](https://pypi.python.org/pypi/headless-ida/)
-[![PyPI Statistics](https://img.shields.io/pypi/dm/headless-ida.svg)](https://pypistats.org/packages/headless-ida)
-[![License](https://img.shields.io/github/license/DennyDai/headless-ida.svg)](https://github.com/DennyDai/headless-ida/blob/main/LICENSE)
+> Fork of [DennyDai/headless-ida](https://github.com/DennyDai/headless-ida) with server mode enhancements: direct RPyC connection, `.i64` support, and database export. Tested with **IDA Pro 9.1 and 9.3** (expected to work on **IDA 9.1+**).
 
-# Install
+## Install
+
 ```bash
-pip install headless-ida
+pip install git+https://github.com/skiyer/headless-ida.git
 ```
 
-# Usage
+## Compatibility
 
-> [!TIP]
-> Headless IDA supports the latest [idalib](https://docs.hex-rays.com/user-guide/idalib). Just provide the idalib path instead of idat64 to use it as the backend.
+- Tested with **IDA Pro 9.1** and **IDA Pro 9.3** on macOS
+- Expected to work on **IDA 9.1+**
+- Both `idat` (TUI) and `ida` (GUI) binaries are supported. If `idat` fails to start, try using `ida` instead — some environments require the GUI binary even in headless mode
 
-### Use it as a normal Python module.
+## Usage
+
+### Command Line
+
+```bash
+# Run a script
+headless-ida /path/to/idat /path/to/binary script.py
+
+# One-liner
+headless-ida /path/to/idat /path/to/binary -c "import idautils; print(list(idautils.Functions())[0:10])"
+
+# Open a pre-analyzed .i64 (fast, skips analysis)
+headless-ida /path/to/idat database.i64 -c "import idautils; print(len(list(idautils.Functions())))"
+
+# Interactive console
+headless-ida /path/to/idat /path/to/binary
+
+# Save the database after running a script (-o)
+headless-ida /path/to/idat /path/to/binary -c "import ida_name; ida_name.set_name(0x1000, 'main')" -o output.i64
+```
+
+### Python API
+
 ```python
-# Initialize HeadlessIda
 from headless_ida import HeadlessIda
-headlessida = HeadlessIda("/path/to/idat64", "/path/to/binary")
 
-# Import IDA Modules (make sure you have initialized HeadlessIda first)
+headlessida = HeadlessIda("/path/to/idat", "/path/to/binary")
+
 import idautils
 import ida_name
 
-# Or Import All IDA Modules at Once (idaapi is not imported by default)
-# from headless_ida.ida_headers import *
-
-# Have Fun
 for func in idautils.Functions():
     print(f"{hex(func)} {ida_name.get_ea_name(func)}")
 ```
 
-### Use it as a command line tool.
-```bash
-# Interactive Console
-$ headless-ida /path/to/idat64 /path/to/binary
-Python 3.8.10 (default, Nov 14 2022, 12:59:47) 
-[GCC 9.4.0] on linux
-Type "help", "copyright", "credits" or "license" for more information.
-(InteractiveConsole)
->>> import idautils
->>> list(idautils.Functions())[0:10]
-[16384, 16416, 16432, 16448, 16464, 16480, 16496, 16512, 16528, 16544]
->>> 
+## Server Mode
 
+Run IDA on a remote machine. The client sends a binary (or `.i64`), the server starts IDA, and the client connects directly to IDA via RPyC.
 
-# Run IDAPython Script
-$ headless-ida /path/to/idat64 /path/to/binary idascript.py
-
-
-# One-liner
-$ headless-ida /path/to/idat64 /path/to/binary -c "import idautils; print(list(idautils.Functions())[0:10])"
-
-
-# In case you like IPython
-$ headless-ida /path/to/idat64 /path/to/binary -c "import IPython; IPython.embed();"
+```
+Client ──file data──→ Server ──starts IDA──→ IDA RPyC
+Client ←──(host, port)──── Server
+Client ═══════════════════════════════════→ IDA RPyC (direct connection)
 ```
 
-# Advanced Usage
-## Remote Server
+### Start the Server
 
-### Start a Headless IDA server
 ```bash
-$ headless-ida-server /path/to/idat64 localhost 1337 &
+headless-ida-server /path/to/idat 0.0.0.0 18000
 ```
 
-### Connect to the server in Python script
+### Run Scripts Remotely
+
+```bash
+# Analyze a binary and run a script
+headless-ida server:18000 /path/to/binary -c "import idautils; print(len(list(idautils.Functions())))"
+
+# Open a .i64 on the server (skips analysis, ~2s)
+headless-ida server:18000 database.i64 -c "import idautils; print(len(list(idautils.Functions())))"
+
+# Interactive console
+headless-ida server:18000 /path/to/binary
+```
+
+### Save & Export Databases (`-o`)
+
+```bash
+# Analyze and download the .i64 (no script execution)
+headless-ida server:18000 /path/to/binary -o output.i64
+
+# Run a script and save the modified database
+headless-ida server:18000 /path/to/binary \
+  -c "import ida_name; ida_name.set_name(0x1000, 'main')" \
+  -o modified.i64
+
+# Open a .i64, modify, save as new version
+headless-ida server:18000 v1.i64 \
+  -c "import ida_name; ida_name.set_name(0x1000, 'entry')" \
+  -o v2.i64
+```
+
+The `-o` flag saves the database **after** script execution, so all modifications (renamed functions, comments, type annotations, patches) are preserved.
+
+### Python API (Remote)
+
 ```python
-# Initialize HeadlessIda
 from headless_ida import HeadlessIdaRemote
-headlessida = HeadlessIdaRemote("localhost", 1337, "/path/to/local/binary")
 
-# Import IDA Modules (make sure you have initialized HeadlessIda first)
+headlessida = HeadlessIdaRemote("192.168.1.100", 18000, "/path/to/local/binary")
+
 import idautils
-import ida_name
+import ida_hexrays
 
-# Have Fun
 for func in idautils.Functions():
-    print(f"{hex(func)} {ida_name.get_ea_name(func)}")
+    cfunc = ida_hexrays.decompile(func)
+    if cfunc:
+        print(str(cfunc))
+        break
 ```
 
-### Connect to the server in command line
+## Version Management Workflow
+
+A reusable integration script is included to validate the **documented features** on a **small binary**:
+
 ```bash
-# Interactive Console
-$ headless-ida localhost:1337 /path/to/local/binary
-# Run IDAPython Script
-$ headless-ida localhost:1337 /path/to/local/binary idascript.py
-# One-liner
-$ headless-ida localhost:1337 /path/to/local/binary -c "import idautils; print(list(idautils.Functions())[0:10])"
+scripts/smoke-test.sh /path/to/idat /path/to/small/binary
 ```
 
+Recommended small test target on macOS:
 
-# Resources
-- [Headless IDA Examples](https://github.com/DennyDai/headless-ida/tree/main/examples)
-- [IDAPython Official Documentation](https://docs.hex-rays.com/developer-guide/idapython)
-- IDAPython Official Examples: [1](https://docs.hex-rays.com/developer-guide/idapython/idapython-examples), [2](https://github.com/idapython/src/tree/master/examples)
-# Known Issues
-### `from XXX import *`
- - Using `from XXX import *` syntax with certain ida modules (like idaapi, ida_ua, etc.) is currently unsupported due to SWIG and RPyC compatibility issues. We recommend importing specific items with `from XXX import YYY, ZZZ`, or importing the entire module using `import XXX`.
- - The issue arises because SWIG, employed for creating Python bindings for C/C++ code, generates intermediary objects (SwigVarlink) that RPyC, our remote procedure call mechanism, cannot serialize or transmit correctly.
+```bash
+scripts/smoke-test.sh \
+  "/Applications/IDA Professional 9.3.app/Contents/MacOS/ida" \
+  "/bin/ls"
+```
+
+The smoke test covers:
+
+- local CLI one-liner
+- local script file execution
+- local interactive console
+- local `.i64` reopen
+- local `-o` export with modifications preserved
+- local Python API
+- remote binary analysis
+- remote `.i64` open
+- remote interactive console
+- remote `-o` clean export
+- remote `-c + -o` modified export
+- remote Python API
+- README version-management workflow (`v1.i64 -> v2.i64 -> local verify`)
+- history-pollution regression check
+
+## Large Files
+
+Large binaries are supported.
+
+- **Local mode** waits indefinitely as long as the IDA process is alive, so there is no artificial timeout during long analysis.
+- **Remote mode** performs the full analysis inside the server-side `run()` RPC. The client only waits for the final RPyC port after analysis completes, so long analysis itself does not trigger the remote connect timeout.
+
+Large-file validation is no longer part of the routine smoke test because it is too slow for regular regression runs, but the architecture supports it.
+
+## Smoke Test
+
+The server acts as an analysis farm. You control your `.i64` versions locally:
+
+```bash
+# Step 1: Analyze and download
+headless-ida server:18000 firmware.bin -o v1.i64
+
+# Step 2: Annotate and save
+headless-ida server:18000 v1.i64 \
+  -c "import ida_name; ida_name.set_name(0x8000, 'boot_entry')" \
+  -o v2.i64
+
+# Step 3: Use locally (no server needed)
+headless-ida /path/to/idat v2.i64 -c "..."
+```
+
+## CLI Reference
+
+```
+headless-ida <ida_or_server> <file> [script] [-c command] [-o output.i64]
+                                              [-f ftype] [-p processor]
+
+Positional arguments:
+  ida_or_server   Path to IDA executable, OR host:port of remote server
+  file            Binary to analyze or .i64 database to open
+  script          Python script to execute (optional)
+
+Options:
+  -c COMMAND      Python one-liner to execute
+  -o OUTPUT       Save .i64 database to file (includes script modifications)
+  -f FTYPE        File type for IDA (prefix from "load file" dialog)
+  -p PROCESSOR    Processor type (e.g. arm:ARMv7-A, mips:R3000)
+```
+
+```
+headless-ida-server <ida_path> <host> <port>
+```
+
+## Known Issues
+
+- **`from XXX import *`** — Using `from XXX import *` with certain IDA modules (like `idaapi`, `ida_ua`) is unsupported due to SWIG/RPyC compatibility issues. Use `import XXX` or `from XXX import YYY` instead. The issue is that SWIG generates intermediary objects (SwigVarlink) that RPyC cannot serialize or transmit correctly.
+
+## Resources
+
+- [Upstream Repository](https://github.com/DennyDai/headless-ida)
+- [IDAPython Documentation](https://docs.hex-rays.com/developer-guide/idapython)
+- [IDAPython Examples](https://docs.hex-rays.com/developer-guide/idapython/idapython-examples)
+
+## License
+
+MIT — see [LICENSE](LICENSE).
