@@ -190,10 +190,15 @@ class HeadlessIdaRemote(HeadlessIda):
         )
 
         try:
-            _ida_host, ida_port = self._control_conn.root.run(
+            ida_host, ida_port = self._control_conn.root.run(
                 file_data, ftype=ftype, processor=processor,
             )
-            self.conn = wait_and_connect(None, host, ida_port, timeout=30)
+            # Server returns "0.0.0.0" as host; use the original host
+            # the client connected to unless the server returns a
+            # specific routable address.
+            if ida_host in ("0.0.0.0", ""):
+                ida_host = host
+            self.conn = wait_and_connect(None, ida_host, ida_port, timeout=30)
         finally:
             if self._control_conn:
                 self._control_conn.close()

@@ -21,10 +21,15 @@ def headlessida_cli():
 
     args = parser.parse_args()
     has_script = args.script_path or args.command
-    is_remote = ":" in args.idat_path
+
+    # Detect host:port remote syntax.  Plain rsplit(":") would misfire
+    # on Windows drive letters like C:\IDA\idat.exe, so we also check
+    # that the part after the last colon is a valid port number.
+    host, _, port_str = args.idat_path.rpartition(":")
+    is_remote = bool(host) and port_str.isdigit()
 
     if is_remote:
-        host, port = args.idat_path.rsplit(":", 1)
+        port = port_str
 
         if args.output and not has_script:
             # -o only: analyze and download, no IDA session needed

@@ -112,10 +112,10 @@ def HeadlessIdaServer(idat_path):
         def on_disconnect(self, conn):
             jobs = list(getattr(self, "_jobs", []))
             if jobs:
-                threading.Thread(
-                    target=lambda: [_cleanup_job(j, grace=3) for j in jobs],
-                    daemon=True,
-                ).start()
+                def _cleanup_all():
+                    for j in jobs:
+                        _cleanup_job(j, grace=3)
+                threading.Thread(target=_cleanup_all, daemon=True).start()
 
         def exposed_run(self, data, ftype=None, processor=None):
             """Open a binary or .i64, start IDA, return (host, port).

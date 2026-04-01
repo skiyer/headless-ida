@@ -240,6 +240,7 @@ def wait_and_connect(proc, host, port, *, service=ForwardIO, timeout=None):
     """
     import time as _time
     deadline = _time.monotonic() + timeout if timeout else None
+    last_exc = None
     while True:
         if proc is not None and proc.poll() is not None:
             raise Exception(
@@ -248,14 +249,18 @@ def wait_and_connect(proc, host, port, *, service=ForwardIO, timeout=None):
                 f"STDERR: {proc.stderr.read().decode(errors='replace')[:500]}"
             )
         if deadline is not None and _time.monotonic() > deadline:
-            raise Exception(
+            msg = (
                 f"Failed to connect to IDA RPyC at {host}:{port} "
                 f"after {timeout}s"
             )
+            if last_exc is not None:
+                msg += f"\nLast error: {last_exc}"
+            raise Exception(msg)
         try:
             return rpyc.connect(
                 host, port, service=service,
                 config={"sync_request_timeout": 60 * 60 * 24},
             )
-        except Exception:
+        except Exception as exc:
+            last_exc = exc
             _time.sleep(0.1)
