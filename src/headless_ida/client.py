@@ -136,6 +136,9 @@ class HeadlessIda:
             self.libida.close_database(True)
         if hasattr(self, "conn"):
             self.conn.close()
+        if hasattr(self, "_control_conn") and self._control_conn:
+            self._control_conn.close()
+            self._control_conn = None
         self.cleaned_up = True
 
     def __del__(self):
@@ -175,23 +178,26 @@ class HeadlessIdaRemote(HeadlessIda):
     def __init__(self, host, port, binary_path, override_import=True,
                  ftype=None, processor=None):
         self.cleaned_up = False
+        self._control_conn = None
         atexit.register(self.clean_up)
 
         with open(binary_path, "rb") as f:
             file_data = f.read()
 
-        self.conn = rpyc.connect(
+        self._control_conn = rpyc.connect(
             host, int(port), service=ForwardIO,
             config={"sync_request_timeout": 60 * 60 * 24},
         )
 
-        result = self.conn.root.run(
-            file_data, ftype=ftype, processor=processor,
-        )
-
-        _ida_host, ida_port = result
-        self.conn.close()
-        self.conn = wait_and_connect(None, host, ida_port, timeout=30)
+        try:
+            _ida_host, ida_port = self._control_conn.root.run(
+                file_data, ftype=ftype, processor=processor,
+            )
+            self.conn = wait_and_connect(None, host, ida_port, timeout=30)
+        finally:
+            if self._control_conn:
+                self._control_conn.close()
+                self._control_conn = None
 
         if override_import:
             self.override_import()

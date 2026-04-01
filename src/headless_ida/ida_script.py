@@ -1,10 +1,13 @@
-import rpyc
 import importlib
+import os
+import sys
+import threading
+
 import ida_auto
 import ida_loader
 import ida_pro
 import idc
-import sys
+import rpyc
 
 
 if __name__ == "__main__":
@@ -29,18 +32,32 @@ if __name__ == "__main__":
             pass
 
     port = int(idc.ARGV[1])
+    claimed_file = None
+    for arg in idc.ARGV[3:]:
+        if arg.startswith("claimed:"):
+            claimed_file = arg[8:]
+            break
+
+    client_connected = threading.Event()
 
     # RPyC server mode: serve IDA API to a single client.
     class HeadlessIda(rpyc.Service):
         def on_connect(self, conn):
+            client_connected.set()
+            if claimed_file:
+                try:
+                    with open(claimed_file, "w") as f:
+                        f.write("1")
+                except Exception:
+                    pass
             ida_loader.set_database_flag(ida_loader.DBFL_KILL)
             sys.stdout.write = conn.root.stdout_write
             sys.stderr.write = conn.root.stderr_write
 
         def on_disconnect(self, conn):
-            ida_pro.qexit(0)
             sys.stdout = sys.__stdout__
             sys.stderr = sys.__stderr__
+            ida_pro.qexit(0)
 
         def exposed_import_module(self, mod):
             return importlib.import_module(mod)
@@ -60,18 +77,25 @@ if __name__ == "__main__":
     if len(idc.ARGV) > 2:
         bind_host = idc.ARGV[2]
 
-    # Watchdog: if no client connects within 60s, exit.
-    import threading
-    def _watchdog():
-        import time
-        time.sleep(60)
-        ida_pro.qexit(1)
-    threading.Thread(target=_watchdog, daemon=True).start()
-
     t = rpyc.utils.server.OneShotServer(
         HeadlessIda, port=port, hostname=bind_host,
         protocol_config={"allow_all_attrs": True},
     )
+
+    # Watchdog: if no client connects within 60s, force-close the listener
+    # so that t.start() unblocks and the script exits normally.
+    # Note: ida_pro.qexit() is unreliable from non-main threads, so we
+    # close the server socket instead and fall through to os._exit.
+    def _watchdog():
+        import time
+        time.sleep(60)
+        if not client_connected.is_set():
+            try:
+                t.close()
+            except Exception:
+                pass
+            os._exit(1)
+    threading.Thread(target=_watchdog, daemon=True).start()
 
     # Signal readiness AFTER socket is bound, BEFORE .start() blocks on accept.
     for arg in idc.ARGV[3:]:

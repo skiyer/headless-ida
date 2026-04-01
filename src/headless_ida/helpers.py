@@ -1,10 +1,12 @@
 import os
 import platform
 import re
+import signal
 import site
 import socket
 import subprocess
 import sys
+import time
 from enum import Enum, auto
 
 import rpyc
@@ -115,7 +117,7 @@ def alloc_port():
 
 def build_ida_command(ida_path, port, input_path, *,
                       host="localhost", ftype=None, processor=None,
-                      ready=None, pack=False, output=None):
+                      ready=None, claimed=None, pack=False, output=None):
     """Build an IDA command as a list (safe for shell=False).
 
     Args:
@@ -126,6 +128,7 @@ def build_ida_command(ida_path, port, input_path, *,
         ftype:      -T file type.
         processor:  -p processor type.
         ready:      Path for ready-signal file (server polls this).
+        claimed:    Path touched once a client connects to the IDA RPyC port.
         pack:       If True, add -P+ (open packed .i64).
         output:     If set, add -o (output database path).
     """
@@ -138,6 +141,8 @@ def build_ida_command(ida_path, port, input_path, *,
     s_value = f'"{_IDA_SCRIPT}" {port} {host}'
     if ready:
         s_value += f" ready:{ready}"
+    if claimed:
+        s_value += f" claimed:{claimed}"
 
     cmd = [ida_path]
     if output:
@@ -153,19 +158,76 @@ def build_ida_command(ida_path, port, input_path, *,
     return cmd
 
 
-def launch_ida(ida_path, port, input_path, **kwargs):
+def launch_ida(ida_path, port, input_path, *, new_session=False, **kwargs):
     """Build command, set up PYTHONPATH, and start IDA subprocess.
 
-    Returns the Popen object.  All keyword args are forwarded to
-    ``build_ida_command``.
+    Returns the Popen object.  Keyword args (except *new_session*) are
+    forwarded to ``build_ida_command``.
+
+    Args:
+        new_session:  If True, start the process in a new session/group
+                      so ``terminate_process_tree`` can kill it by pgid.
+                      Only used by the server; local mode leaves it False
+                      so Ctrl-C propagates naturally.
     """
     setup_pythonpath()
     env = os.environ.copy()
     env["IDA_NO_HISTORY"] = "1"
     command = build_ida_command(ida_path, port, input_path, **kwargs)
-    return subprocess.Popen(
-        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env
-    )
+
+    popen_kwargs = {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "env": env,
+    }
+    if new_session:
+        if os.name == "nt":
+            popen_kwargs["creationflags"] = getattr(
+                subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+            )
+        else:
+            popen_kwargs["start_new_session"] = True
+
+    return subprocess.Popen(command, **popen_kwargs)
+
+
+def terminate_process_tree(proc, *, timeout=5):
+    """Terminate an IDA subprocess and its children best-effort."""
+    if proc is None or proc.poll() is not None:
+        return
+
+    try:
+        if os.name == "nt":
+            proc.terminate()
+        else:
+            os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    except Exception:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+
+    deadline = time.monotonic() + timeout
+    while proc.poll() is None and time.monotonic() < deadline:
+        time.sleep(0.1)
+
+    if proc.poll() is not None:
+        return
+
+    try:
+        if os.name == "nt":
+            proc.kill()
+        else:
+            os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
 
 
 def wait_and_connect(proc, host, port, *, service=ForwardIO, timeout=None):

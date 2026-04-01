@@ -48,21 +48,24 @@ def headlessida_cli():
 
     headlessida_dict = {"headlessida": headlessida, "HeadlessIda": HeadlessIda}
 
-    if args.script_path:
-        with open(args.script_path) as f:
-            exec(compile(f.read(), args.script_path, 'exec'), headlessida_dict)
-    elif args.command:
-        exec(compile(args.command, '<string>', 'exec'), headlessida_dict)
-    else:
-        code.interact(local=locals())
+    try:
+        if args.script_path:
+            with open(args.script_path) as f:
+                exec(compile(f.read(), args.script_path, 'exec'), headlessida_dict)
+        elif args.command:
+            exec(compile(args.command, '<string>', 'exec'), headlessida_dict)
+        else:
+            code.interact(local=locals())
 
-    # Save database after script execution (includes modifications)
-    if args.output and has_script:
-        if hasattr(headlessida, 'conn') and headlessida.conn:
-            i64_data = headlessida.conn.root.save_database()
-            with open(args.output, "wb") as f:
-                f.write(i64_data)
-            print(f'Saved to {args.output}')
+        # Save database after script execution (includes modifications)
+        if args.output and has_script:
+            if hasattr(headlessida, 'conn') and headlessida.conn:
+                i64_data = headlessida.conn.root.save_database()
+                with open(args.output, "wb") as f:
+                    f.write(i64_data)
+                print(f'Saved to {args.output}')
+    finally:
+        headlessida.clean_up()
 
 
 def headlessida_server_cli():
