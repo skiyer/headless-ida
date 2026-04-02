@@ -46,7 +46,7 @@ headless-ida /path/to/idat binary -c "import ida_name; ida_name.set_name(0x1000,
 headless-ida /path/to/idat v1.i64 -c "..." -o v2.i64
 
 # Download clean analysis result (no script)
-headless-ida server:port binary -o output.i64
+headless-ida /path/to/idat binary -o output.i64
 ```
 
 ### Remote server mode

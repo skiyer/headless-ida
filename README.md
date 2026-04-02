@@ -1,9 +1,9 @@
 <p align="center">
-  <img alt="Headless IDA" src="https://raw.githubusercontent.com/DennyDai/headless-ida/main/headless-ida.png" width="128">
+  <img alt="Headless IDA" src="https://raw.githubusercontent.com/skiyer/headless-ida/main/headless-ida.png" width="128">
 </p>
 <h1 align="center">Headless IDA</h1>
 
-> Fork of [DennyDai/headless-ida](https://github.com/DennyDai/headless-ida) with server mode enhancements: direct RPyC connection, `.i64` support, and database export. Tested with **IDA Pro 9.1 and 9.3** (expected to work on **IDA 9.1+**).
+> Fork of [DennyDai/headless-ida](https://github.com/DennyDai/headless-ida) with server mode enhancements: direct RPyC connection, `.i64` support, and database export.
 
 ## Install
 
@@ -15,7 +15,7 @@ pip install git+https://github.com/skiyer/headless-ida.git
 
 - Tested with **IDA Pro 9.1** and **IDA Pro 9.3** on macOS
 - Expected to work on **IDA 9.1+**
-- Both `idat` (TUI) and `ida` (GUI) binaries are supported. If `idat` fails to start, try using `ida` instead — some environments require the GUI binary even in headless mode
+- Both `idat` (TUI) and `ida` (GUI) binaries are supported. If `idat` fails to start, try using `ida` instead
 
 ## Usage
 
@@ -34,7 +34,7 @@ headless-ida /path/to/idat database.i64 -c "import idautils; print(len(list(idau
 # Interactive console
 headless-ida /path/to/idat /path/to/binary
 
-# Save the database after running a script (-o)
+# Save the database after running a script (-o), so all modifications (renamed functions, comments, etc.) are preserved.
 headless-ida /path/to/idat /path/to/binary -c "import ida_name; ida_name.set_name(0x1000, 'main')" -o output.i64
 ```
 
@@ -98,8 +98,6 @@ headless-ida server:18000 v1.i64 \
   -o v2.i64
 ```
 
-The `-o` flag saves the database **after** script execution, so all modifications (renamed functions, comments, type annotations, patches) are preserved.
-
 ### Python API (Remote)
 
 ```python
@@ -115,65 +113,6 @@ for func in idautils.Functions():
     if cfunc:
         print(str(cfunc))
         break
-```
-
-## Version Management Workflow
-
-A reusable integration script is included to validate the **documented features** on a **small binary**:
-
-```bash
-scripts/smoke-test.sh /path/to/idat /path/to/small/binary
-```
-
-Recommended small test target on macOS:
-
-```bash
-scripts/smoke-test.sh \
-  "/Applications/IDA Professional 9.3.app/Contents/MacOS/ida" \
-  "/bin/ls"
-```
-
-The smoke test covers:
-
-- local CLI one-liner
-- local script file execution
-- local interactive console
-- local `.i64` reopen
-- local `-o` export with modifications preserved
-- local Python API
-- remote binary analysis
-- remote `.i64` open
-- remote interactive console
-- remote `-o` clean export
-- remote `-c + -o` modified export
-- remote Python API
-- README version-management workflow (`v1.i64 -> v2.i64 -> local verify`)
-- history-pollution regression check
-
-## Large Files
-
-Large binaries are supported.
-
-- **Local mode** waits indefinitely as long as the IDA process is alive, so there is no artificial timeout during long analysis.
-- **Remote mode** performs the full analysis inside the server-side `run()` RPC. The client only waits for the final RPyC port after analysis completes, so long analysis itself does not trigger the remote connect timeout.
-
-Large-file validation is no longer part of the routine smoke test because it is too slow for regular regression runs, but the architecture supports it.
-
-## Smoke Test
-
-The server acts as an analysis farm. You control your `.i64` versions locally:
-
-```bash
-# Step 1: Analyze and download
-headless-ida server:18000 firmware.bin -o v1.i64
-
-# Step 2: Annotate and save
-headless-ida server:18000 v1.i64 \
-  -c "import ida_name; ida_name.set_name(0x8000, 'boot_entry')" \
-  -o v2.i64
-
-# Step 3: Use locally (no server needed)
-headless-ida /path/to/idat v2.i64 -c "..."
 ```
 
 ## CLI Reference
